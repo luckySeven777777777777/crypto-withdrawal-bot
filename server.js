@@ -7,50 +7,57 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// 保留数据（你可以改成数据库）
+// 模拟数据库（你可以替换成真实数据库）
 let userWallet = null;
 
-// ⭐ 1) 获取钱包地址
+// ⭐ 1) 获取钱包
 app.get("/api/wallet", (req, res) => {
     res.json({ wallet: userWallet });
 });
 
-// ⭐ 2) 绑定/修改钱包地址
+// ⭐ 2) 绑定或修改钱包
 app.post("/api/wallet", (req, res) => {
     const { wallet, oldWallet } = req.body;
 
+    // 钱包已存在，必须验证旧地址
     if (userWallet && oldWallet && oldWallet !== userWallet) {
         return res.json({ success: false, error: "Old wallet mismatch" });
     }
 
     userWallet = wallet;
-    res.json({ success: true, wallet: userWallet });
+
+    res.json({ success: true, wallet });
 });
 
-// ⭐ 3) 提现 API
+// ⭐ 3) 提现
 app.post("/api/withdraw", (req, res) => {
     const { coin, amount, usdt, wallet, hash } = req.body;
 
     if (!wallet) {
-        return res.json({ success: false, error: "No wallet bound" });
+        return res.json({ success: false, error: "Wallet not bound" });
     }
 
-    // 你可以在这里做机器人通知等逻辑
-    console.log("Withdraw request:", { coin, amount, usdt, wallet, hash });
+    console.log("Withdrawal request received:", {
+        coin, amount, usdt, wallet, hash
+    });
 
     res.json({ success: true, hash });
 });
 
-// ⭐ 4) 静态文件托管（前端）
+// ----------- 静态文件托管（前端） --------------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 app.use(express.static(path.join(__dirname, "public")));
 
-// ⭐ 5) 兜底：所有不属于 /api/* 的路由返回 index.html
+// 兜底路由（SPA 必须）
 app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// ⭐ 6) Railway 端口
+// Railway 端口
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log("Server running on port " + PORT));
+
+app.listen(PORT, () => {
+    console.log("Server running on port " + PORT);
+});
