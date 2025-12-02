@@ -24,7 +24,7 @@ button:disabled{background:#555;cursor:not-allowed;}
 </head>
 <body>
 <div class="container">
-<h2>Withdrawal</h2>
+<h2>Crypto Withdrawal</h2>
 
 <label for="cryptoSelect">Select Cryptocurrency</label>
 <select id="cryptoSelect">
@@ -58,6 +58,11 @@ button:disabled{background:#555;cursor:not-allowed;}
 </div>
 
 <script>
+// 自动根据环境切换 API_BASE
+const API_BASE = window.location.hostname.includes("railway.app") 
+  ? `https://${window.location.hostname}` 
+  : "http://localhost:3000";
+
 let walletBound=false, pwdCreated=false, currentWallet=null;
 const FEE=0.1;
 const coinAmount=document.getElementById('coinAmount');
@@ -73,18 +78,7 @@ const confirmPwdBtn=document.getElementById('confirmPwdBtn');
 const txHashDisplay=document.getElementById('txHashDisplay');
 const copyBtn=document.getElementById('copyBtn');
 
-// 🚀 修改这里，直接写你部署的域名
-const API_BASE = "https://crypto-withdrawal-bot-production.up.railway.app";
-
-// USDT换算和手续费显示
-coinAmount.addEventListener('input', ()=>{
-    const qty=parseFloat(coinAmount.value)||0;
-    usdtConverted.innerText=`USDT Equivalent: ${qty*50}`;
-    feeDisplay.innerText=`Fee ${FEE} USDT, Actual Amount: ${Math.max(qty*50-FEE,0)}`;
-    checkSubmitEnable();
-});
-
-// 掩码函数
+function generateHash(){return 'TX-'+Date.now().toString(36)+'-'+Math.random().toString(36).substr(2,8);}
 function maskWallet(addr){return addr.slice(0,3)+'****'+addr.slice(-3);}
 function checkSubmitEnable(){
     const qty=parseFloat(coinAmount.value)||0;
@@ -94,14 +88,13 @@ function checkSubmitEnable(){
 // 初始化钱包
 async function initWallet(){
     try{
-        const res = await fetch(API_BASE+'/api/wallet');
-        if(!res.ok) throw new Error('Network error');
+        const res = await fetch(`${API_BASE}/api/wallet`);
+        if (!res.ok) throw new Error('Network error');
         const data = await res.json();
         if(data.wallet){
-            currentWallet = data.wallet;
+            currentWallet=data.wallet;
             walletInput.value = maskWallet(currentWallet);
             walletInput.disabled = true;
-            bindWalletBtn.disabled = true;
             walletBound = true;
             checkSubmitEnable();
         }
@@ -109,28 +102,36 @@ async function initWallet(){
 }
 initWallet();
 
+coinAmount.addEventListener('input', ()=>{
+    const qty=parseFloat(coinAmount.value)||0;
+    usdtConverted.innerText=`USDT Equivalent: ${qty*50}`;
+    feeDisplay.innerText=`Fee ${FEE} USDT, Actual Amount: ${Math.max(qty*50-FEE,0)}`;
+    checkSubmitEnable();
+});
+
 // 绑定钱包
 bindWalletBtn.addEventListener('click', async ()=>{
-    if(currentWallet){ alert('Wallet already bound.'); return; }
+    if(currentWallet){ alert('Wallet already bound. Use Modify Wallet.'); return; }
     const val = walletInput.value.trim();
     if(!val){ alert('Enter wallet'); return; }
     try{
-        const res = await fetch(API_BASE+'/api/wallet',{
+        const res = await fetch(`${API_BASE}/api/wallet`, {
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ wallet: val })
         });
-        if(!res.ok) throw new Error('Network error');
+        if (!res.ok) throw new Error('Network error');
         const data = await res.json();
         if(data.success){
             currentWallet = data.wallet;
             walletInput.value = maskWallet(currentWallet);
             walletInput.disabled = true;
-            bindWalletBtn.disabled = true;
             walletBound = true;
-            checkSubmitEnable();
             alert('Wallet bound successfully');
-        } else alert(data.error);
+            checkSubmitEnable();
+        } else {
+            alert(data.error);
+        }
     }catch(err){ alert('Error: '+err.message); }
 });
 
@@ -140,21 +141,20 @@ editWalletBtn.addEventListener('click', async ()=>{
     if(!newWallet) return;
     const oldWallet = currentWallet;
     try{
-        const res = await fetch(API_BASE+'/api/wallet',{
+        const res = await fetch(`${API_BASE}/api/wallet`, {
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ wallet:newWallet, oldWallet })
         });
-        if(!res.ok) throw new Error('Network error');
+        if (!res.ok) throw new Error('Network error');
         const data = await res.json();
         if(data.success){
             currentWallet = data.wallet;
             walletInput.value = maskWallet(currentWallet);
             walletInput.disabled = true;
-            bindWalletBtn.disabled = true;
             walletBound = true;
-            checkSubmitEnable();
             alert('Wallet updated successfully');
+            checkSubmitEnable();
         } else alert(data.error);
     }catch(err){ alert('Error: '+err.message); }
 });
@@ -178,7 +178,7 @@ submitBtn.addEventListener('click', async ()=>{
     const qty=parseFloat(coinAmount.value)||0;
     const payload={ coin: document.getElementById('cryptoSelect').value, amount: qty, wallet: currentWallet };
     try{
-        const res = await fetch(API_BASE+'/api/withdraw',{
+        const res = await fetch(`${API_BASE}/api/withdraw`, {
             method:'POST',
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify(payload)
@@ -193,7 +193,7 @@ submitBtn.addEventListener('click', async ()=>{
     }catch(err){ alert('Error: '+err.message); }
 });
 
-// 复制交易哈希
+// 复制
 copyBtn.addEventListener('click', ()=>{
     navigator.clipboard.writeText(txHashDisplay.innerText).then(()=>alert('Copied!'));
 });

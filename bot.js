@@ -1,18 +1,28 @@
-const { Telegraf } = require('telegraf');
+let bot = null;
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
+if (process.env.BOT_TOKEN && process.env.ADMIN_CHAT_ID) {
+  const { Telegraf } = require('telegraf');
+  bot = new Telegraf(process.env.BOT_TOKEN);
 
-bot.on('callback_query', ctx => {
-  const data = ctx.callbackQuery.data;
-  if (data === "withdraw_success") {
-    ctx.reply("提现成功确认 ✔");
-  } else if (data === "withdraw_cancel") {
-    ctx.reply("提现已取消 ✖");
-  }
-  ctx.answerCbQuery();
-});
+  bot.on('callback_query', ctx => {
+    const data = ctx.callbackQuery.data;
+    if (data === "withdraw_success") {
+      ctx.reply("提现成功确认 ✔");
+    } else if (data === "withdraw_cancel") {
+      ctx.reply("提现已取消 ✖");
+    }
+    ctx.answerCbQuery();
+  });
+
+  bot.launch().then(() => console.log("Telegram Bot started"));
+}
 
 async function sendWithdrawNotification(record) {
+  if (!bot) {
+    console.log("模拟通知:", record);
+    return;
+  }
+
   const chat_id = process.env.ADMIN_CHAT_ID;
   if (!chat_id) return;
 
@@ -28,7 +38,5 @@ async function sendWithdrawNotification(record) {
     }
   });
 }
-
-bot.launch();
 
 module.exports = { sendWithdrawNotification };
