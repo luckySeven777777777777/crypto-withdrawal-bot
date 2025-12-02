@@ -1,5 +1,5 @@
 {
-  "name": "crypto-withdraw-bot",
+  "name": "crypto-withdrawal-bot",
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
@@ -8,6 +8,6 @@
   "dependencies": {
     "express": "^4.18.2",
     "body-parser": "^1.20.2",
-    "telegraf": "^4.12.2"
+    "cors": "^2.8.5"
   }
 }
