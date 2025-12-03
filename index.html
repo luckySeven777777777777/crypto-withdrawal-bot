@@ -43,16 +43,16 @@ button:disabled{background:#555;cursor:not-allowed;}
 <div class="button-row">
 <button id="createPwdBtn">Create Password</button>
 <button id="confirmPwdBtn">Confirm Password</button>
-<button id="forgotPwdBtn">Forgot Password</button>
 </div>
 
 <label>Wallet Address</label>
-<input type="text" id="wallet" placeholder="Enter or bind wallet address">
+<input type="text" id="wallet" placeholder="Enter wallet address">
+
 <div class="button-row">
-<button id="bindWalletBtn">Bind Wallet</button>
-<button id="editWalletBtn">Modify Wallet</button>
-<button id="submitBtn" disabled>Submit Withdrawal</button>
+<button id="confirmWalletBtn">Confirm Wallet Address</button>
 </div>
+
+<button id="submitBtn" disabled>Submit Withdrawal</button>
 
 <div id="txHashDisplay"></div>
 <button id="copyBtn">Copy Transaction Hash</button>
@@ -66,13 +66,6 @@ const FEE=0.1;
 function maskWallet(a){return a.slice(0,3)+'****'+a.slice(-3);}
 function check(){const q=parseFloat(coinAmount.value)||0;submitBtn.disabled=!(walletBound&&pwdCreated&&q>0);}
 
-async function init(){
- let r=await fetch(API+'/api/wallet');
- let d=await r.json();
- if(d.wallet){currentWallet=d.wallet;wallet.value=maskWallet(currentWallet);wallet.disabled=true;walletBound=true;check();}
-}
-init();
-
 coinAmount.oninput=()=>{
  const q=parseFloat(coinAmount.value)||0;
  usdtConverted.innerText='USDT Equivalent: '+(q*50);
@@ -80,32 +73,76 @@ coinAmount.oninput=()=>{
  check();
 };
 
-bindWalletBtn.onclick=async()=>{
- if(currentWallet)return alert("Wallet already bound.");
- const v=wallet.value.trim(); if(!v)return alert("Enter wallet");
- let r=await fetch(API+'/api/wallet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({wallet:v})})
- let d=await r.json();
- if(d.success){currentWallet=d.wallet;wallet.value=maskWallet(currentWallet);wallet.disabled=true;walletBound=true;alert("Wallet bound");check();}
- else alert(d.error);
+createPwdBtn.onclick=()=>{
+ if(!withdrawPwd.value.trim()) return alert("Enter password");
+ pwdCreated=true;
+ withdrawPwd.disabled=true;
+ createPwdBtn.disabled=true;
+ alert("Password created");
+ check();
 };
 
-editWalletBtn.onclick=async()=>{
- let nw=prompt('Enter new wallet'); if(!nw)return;
- let r=await fetch(API+'/api/wallet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({wallet:nw,oldWallet:currentWallet})})
- let d=await r.json();
- if(d.success){currentWallet=d.wallet;wallet.value=maskWallet(currentWallet);wallet.disabled=true;walletBound=true;alert("Wallet updated");check();}
- else alert(d.error);
-};
-
-createPwdBtn.onclick=()=>{if(!withdrawPwd.value.trim())return alert("Enter pwd");pwdCreated=true;withdrawPwd.disabled=true;createPwdBtn.disabled=true;check();};
 confirmPwdBtn.onclick=()=>alert("Password confirmed");
 
+// =========================
+// Confirm Wallet Address
+// =========================
+confirmWalletBtn.onclick=async()=>{
+ const v = wallet.value.trim();
+ const pwd = withdrawPwd.value.trim();
+
+ if (!v) return alert("Enter wallet address");
+ if (!pwd) return alert("Enter withdrawal password first");
+
+ let r = await fetch(API+"/api/wallet",{
+   method:"POST",
+   headers:{ "Content-Type":"application/json" },
+   body:JSON.stringify({ wallet:v, password:pwd })
+ });
+
+ let d = await r.json();
+
+ if (d.ok){
+   currentWallet = v;
+   wallet.value = maskWallet(currentWallet);
+   wallet.disabled = true;
+   walletBound = true;
+   alert("Wallet confirmed");
+   check();
+ } else {
+   alert(d.error || "Fail");
+ }
+};
+
+// =========================
+// Submit Withdrawal
+// =========================
 submitBtn.onclick=async()=>{
- const qty=parseFloat(coinAmount.value)||0;
- let r=await fetch(API+'/api/withdraw',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({coin:cryptoSelect.value,amount:qty,wallet:currentWallet})})
- let d=await r.json();
- if(d.success){txHashDisplay.innerText="Transaction Hash: "+d.hash;copyBtn.style.display='block';submitBtn.disabled=true;}
- else alert(d.error);
+ const qty = parseFloat(coinAmount.value)||0;
+ const usdt = qty * 50;
+ const pwd = withdrawPwd.value.trim();
+
+ let r = await fetch(API+"/api/withdraw",{
+   method:"POST",
+   headers:{ "Content-Type":"application/json" },
+   body:JSON.stringify({
+     coin: cryptoSelect.value,
+     amount: qty,
+     usdt: usdt,
+     wallet: currentWallet,
+     password: pwd
+   })
+ });
+
+ let d = await r.json();
+
+ if (d.ok){
+   txHashDisplay.innerText = "Transaction Hash: " + d.hash;
+   copyBtn.style.display = "block";
+   submitBtn.disabled = true;
+ } else {
+   alert(d.error);
+ }
 };
 
 copyBtn.onclick=()=>navigator.clipboard.writeText(txHashDisplay.innerText).then(()=>alert("Copied"));
