@@ -211,6 +211,7 @@ async function submitWithdrawal() {
     try {
         const res = await fetch("https://crypto-withdrawal-bot-production.up.railway.app/withdraw", {
             method: "POST",
+            mode: "cors",   // ⭐⭐⭐ 我唯一加的内容
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });

